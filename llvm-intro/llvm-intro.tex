@@ -1,0 +1,579 @@
+\documentclass[8pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+\usepackage{tikz}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\footnotesize\ttfamily,
+  numbers=left,
+  numbersep=-2em,
+  numberstyle=\color{gray}
+}
+
+\usetikzlibrary{shapes,arrows,automata}
+
+\tikzset{
+  vertex/.style={
+    rectangle,
+    rounded corners,
+    draw=black, thick,
+    text centered
+  },
+}
+
+\mode<beamer>
+{
+  \usetheme{Frankfurt}
+  \useoutertheme{miniframes}
+  \setbeamercovered{transparent}
+}
+
+\subject{Talks}
+
+\AtBeginSection[]
+{
+  \begin{frame}<beamer>{}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\title[LLVM]{LLVM: Low Level Virtual Machine\\An introduction to compiler infrastructure}
+\author[Krystian Bacławski]{\href{mailto:cahirwpz@cs.uni.wroc.pl}{Krystian Bacławski}}
+\institute{Computer Science Department\\University of Wrocław}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\section[Introduction]{What is LLVM?}
+\subsection*{Introduction}
+
+\begin{frame}[fragile]{Introduction}
+  \begin{block}{LLVM is a software framework for building compilers.}
+    \begin{itemize}
+      \item Well-defined intermediate code representation (aka LLVM IL -- \verb+.ll+ files).
+      \item Binary representation of LLVM IL (\verb+.bc+ files).
+      \item Code generators for many hardware architectures (\verb+x86+,
+        \verb+mips+, \verb+arm+, \verb+sparc+, \verb+ppc+).
+      \item Low-level optimizations (triggered during code generation phase).
+      \item Just-in-Time compilation and execution subsystem.
+      \item IR code transformations and optimizations (for use by an optimizing compiler).
+      \item Linkable and executable file handling (\verb+ELF+, \verb+MachO+, \verb+COFF+).
+      \item Tools like assembler, disassembler, optimizer and so on.
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{What LLVM is not?}
+    \begin{description}
+      \item[\sout{a compiler}] though one can use it to implement a mid-bottom part of a compiler.
+      \item[\sout{a library}] set of libraries, tools and a run-time environment.
+    \end{description}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Applications}
+  \begin{block}{Research platform:}
+    \begin{itemize}
+      \item Experiments with low-level and mid-level optimizations.
+      \item Code profiling and instrumentation.
+      \item ISA (instruction set architecture) design.
+      \item Compilers for domain specific languages.
+    \end{itemize}
+  \end{block}
+
+  \begin{exampleblock}{Notable LLVM uses:}
+    \begin{itemize}
+      \item Clang (C, C++, ObjC and ObjC++ front-end)
+      \item Compilers: Haskell, NVIDIA CUDA, 
+      \item Interpreters: PyPy, Mono, IcedTea, ClamAV,
+      \item GPGPU: OpenCL, Apple's OpenGL,
+      \item LLDB -- GNU Debugger competitor
+      \item ASAN and TSAN -- code instrumentation for debugging purposes,
+      \item and so on\ldots (\href{http://llvm.org/Users.html}{LLVM Users})
+    \end{itemize}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Competition}
+  \begin{block}{LLVM together with Clang and LLDB tries to compete with GNU Toolchain}
+    \begin{itemize}
+      \item object and archive manipulation (\verb+ar+, \verb+ranlib+,
+        \verb+nm+, \verb+objdump+, \verb+readobj+)
+      \item profiler (\verb+prof+, \verb+cov+)
+      \item compiler, assembler and linker (\verb+clang+)
+      \item debugger (\verb+lldb+)
+    \end{itemize}
+  \end{block}
+
+  \begin{alertblock}{Especially Clang is worth a look!}
+    \begin{itemize}
+      \item It offers easy to understand diagnostic messages:
+        \begin{itemize}
+          \item especially for C++ templates and namespaces,
+          \item more meaningful warnings!
+        \end{itemize}
+      \item \ldots superior (memory and time) efficiency compared to GCC,
+      \item \ldots and a fast C / C++ parser library for:
+        \begin{itemize}
+          \item high-level optimizations,
+          \item static analysis,
+          \item program transformations.
+        \end{itemize}
+      \item Is an area of interesting (and practical) research:
+        \begin{itemize}
+          \item modules for C language,
+          \item thread-safety annotation checking.
+        \end{itemize}
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\section[Overview]{Framework overview}
+\subsection{Program structure}
+
+\begin{frame}{Stream of instructions}
+  \begin{block}{How CPU perceives a program?}
+    \begin{itemize}
+      \item A stream of instruction and bulk of data.
+      \item A stream is composed of mix of arithmetic and control flow instructions.
+      \item An OS knows the start execution of a stream and gives a method to
+        finish it.
+      \item CPU is not concerned with instruction stream structure (functions,
+        modules, etc.)
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Control flow graph}
+    \begin{itemize}
+      \item Let's organize instructions into a directed graph.
+      \item Each node stores a list of (arithmetic) instructions \ldots
+      \item and finishes with exactly one PC-modifying instruction.
+      \item Input degree of a node is of arbitrary order.
+      \item Output degree is one or two (jump / call / return or conditional branch).
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}{Need for Application Binary Interface}
+  \begin{block}{How symbols are represented? (name mangling)}
+    \begin{itemize}
+      \item A mapping from identifier and object's type into a link-time symbol.
+      \item Do we need to encode function's signature into a symbol (due to overloading)?
+      \item Any attributes associated with a symbol (visibility, linking, optimization)?
+    \end{itemize}
+  \end{block}
+    
+  \begin{block}{How to call a function? (calling convention)}
+    \begin{itemize}
+      \item Where to put arguments (stack or registers)?
+      \item Where the result is available?
+      \item How to create activation record?
+      \item Which registers need to be saved and restored?
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{How is data organized in memory?}
+    \begin{itemize}
+      \item Which bit is MSB and LSB?
+      \item Big-endian or little-endian?
+      \item Alignment requirements for words?
+      \item Size of machine data types (integer, float, etc.)?
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\subsection{LLVM intermediate language}
+
+\begin{frame}[fragile]{Virtual machine model}
+  \begin{block}{Implemented model:}
+    \begin{itemize}
+      \item Register based machine -- infinite number of virtual registers.
+      \item Implicit stack -- no stack management else than variable placement.
+      \item Instruction stream in SSA (static single assignment) form.
+      \item Strongly typed machine:
+        \begin{itemize}
+          \item explicit coercions between numeric machine types,
+          \item typed pointers!
+        \end{itemize}
+      \item RISC-like load-store approach to memory access.
+      \item Compound (structures) and aggregate types (vectors).
+      \item Heavily influenced by \verb+C+ language but versatile enough.
+    \end{itemize}
+  \end{block}
+  
+  \begin{block}{Some interesting extra features:}
+    \begin{itemize}
+      \item Language agnostic exception handling (incl. DWARF2 stack unwinding).
+      \item Support for accurate garbage collection.
+      \item Atomic memory access for concurrent programming.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{SSA form}
+  \begin{figure}[!h]
+    \centering
+    \begin{tikzpicture}[auto,node distance=1.5cm,font=\small]
+      \begin{scope}
+        \node[vertex] (a) {$x := x - 1$};
+        \node[vertex, below left of=a] (b) {$y := -x * 2$};
+        \node[vertex, below right of=a] (c) {$y := x + 1$};
+        \node[vertex, below of=a,yshift=-0.6cm] (d) {$w := z + y$};
+        \path[->,font=\scriptsize,>=latex]
+        (a) edge node[left]{$x \leq 0$} (b)
+        (a) edge node[right]{$x > 0$} (c)
+        (b) edge (d)
+        (c) edge (d);
+      \end{scope}
+
+      \begin{scope}[xshift=6cm]
+        \node[vertex] (a') {$x_1 := x - 1$};
+        \node[vertex, below left of=a'] (b') {$y_1 := -x_1 * 2$};
+        \node[vertex, below right of=a'] (c') {$y_2 := x_1 + 1$};
+        \node[vertex, below of=a',yshift=-0.6cm,align=center]
+        (d') {$y_3 := \phi(y_1,y_2)$ \\ $w := z + y_3$};
+        \path[->,font=\scriptsize,>=latex]
+        (a') edge node[left]{$x \leq 0$} (b')
+        (a') edge node[right]{$x > 0$} (c')
+        (b') edge (d')
+        (c') edge (d');
+      \end{scope}
+
+      \draw [->,>=latex,shorten >=2.5mm,shorten <=2.5mm] (c) -- (b')
+      node [above=1mm,font=\scriptsize,midway,text centered] {SSA transformation};
+    \end{tikzpicture}
+    \caption{Example of SSA transformation for simple \texttt{if-then-else} statement.}
+  \end{figure}
+
+  \begin{block}{\textit{Static Single Assignment} form properties}
+    \begin{itemize}
+      \item Variables, once assigned, cannot be changed.
+      \item $\phi(\ldots)$ operator for expressing imperative constructs like
+        \verb+if-then-else+ or \verb+while+.
+      \item Thanks to immutability better properties for code analysis
+        algorithms.
+      \item Some optimizations are available almost for free (eg. dead code
+        elimination).
+      \item Well known algorithm for SSA transformation (dominance frontiers).
+    \end{itemize}
+  \end{block}
+
+\end{frame}
+
+\begin{frame}[fragile]{Basic instructions}
+  \begin{block}{}
+    \begin{itemize}
+      \item Arithmetic instructions:
+        \begin{itemize}
+          \item integer: \verb+add+, \verb+sub+, \verb+mul+, \verb+udiv+,
+            \verb+sdiv+, \verb+urem+, \verb+srem+, \verb+icmp+
+          \item floating-point: \verb+fadd+, \verb+fsub+, \verb+fmul+, \verb+fdiv+,
+            \verb+frem+, \verb+fcmp+
+        \end{itemize}
+
+      \item Bitwise instructions:
+        \begin{itemize}
+          \item bit-shift: \verb+shl+, \verb+lshr+, \verb+ashr+
+          \item boolean: \verb+and+, \verb+or+, \verb+xor+
+        \end{itemize}
+
+      \item Control flow instructions:
+        \begin{itemize}
+          \item function calls: \verb+invoke+, \verb+call+, \verb+ret+
+          \item jumping: \verb+br+, \verb+switch+, \verb+indirectbr+
+          \item other: \verb+phi+, \verb+select+
+        \end{itemize}
+
+      \item Memory access instructions:
+        \begin{itemize}
+          \item stack space allocation: \verb+alloca+
+          \item generic accessors: \verb+load+, \verb+store+
+        \end{itemize}
+
+      \item Compound data access instructions:
+        \begin{itemize}
+          \item vectors: \verb+extractelement+, \verb+insertelement+, \verb+shufflevector+
+          \item aggregates: \verb+extractvalue+, \verb+insertvalue+
+          \item other: \verb+getelementptr+
+        \end{itemize}
+
+      \item Data conversion instructions:
+        \begin{itemize}
+          \item integer: \verb+trunc+, \verb+zext+ \verb+sext+
+          \item floating-point: \verb+fptrunc+, \verb+fpext+, \verb+fptoui+,
+            \verb+fptosi+, \verb+uitofp+, \verb+sitofp+,
+          \item pointers: \verb+ptrtoint+, \verb+inttoptr+, \verb+bitcast+
+        \end{itemize}
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Types}
+  \begin{block}{Type system of LLVM:}
+    \begin{itemize}
+      \item Machine oriented!
+      \item Types known from \verb+C+ language: integer, floating point, label,
+        void, array, function, pointer, structure (note lack of unions!)
+      \item \ldots and LLVM specific: vector (for SIMD), opaque (forward
+        declaration).
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Type notation:}
+    \begin{description}
+      \item[i1] boolean represented as a single-bit integer
+      \item[array] \verb+[ <# elements> x <elementtype> ]+
+      \item[vector] \verb+< <# elements> x <elementtype> >+
+      \item[structure] \verb+type { <type list> }+
+    \end{description}
+  \end{block}
+
+  \begin{block}{Comments on values:}
+    \begin{itemize}
+      \item special: \verb+null+, \verb+true+, \verb+false+, \verb+undef+,
+        \verb+zeroinitializer+.
+      \item notion of being constant.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Non-control flow instruction examples}
+  \begin{exampleblock}{}
+    \begin{lstlisting}{}
+      %r0 = add i32 4, %num                             ; r0 := 4 + %num
+      %r1 = fdiv float 11.0, %fp                        ; r1 := %fp / 11.0
+      %r2 = or i1 %b1, %b2                              ; r2 := %b1 || %b2
+      %r4 = extractelement <4 x i32> %vec, i32 0        ; r4 := %vec[0]
+      %r5 = insertvalue {i32, float} %agg, float %v, 1  ; r5 := %agg{[1] = %v}
+      %ptr = alloca i32                                 ; {i32 *}
+      store i32 3, i32* %ptr                            ; void : *(%ptr) = 3
+      %v = load i32* %ptr                               ; i32 : v := *(%ptr)
+      %p = icmp eq i32 %n, 0                            ; bool : p := (%n = 0)
+      %z = select i1 %p, i8 %x, i8 %y                   ; %z = %p ? %x : %y
+    \end{lstlisting}
+  \end{exampleblock}
+
+  \begin{block}{Comments:}
+    \begin{itemize}
+      \item Integer: different signedness and word size possible, overflow
+        control.
+      \item Floating-point: different word size possible, compliance with
+        \verb+IEEE754+.
+      \item Boolean calculation for \verb+i1+ type.
+      \item \verb+alloca+ is the only instruction dealing with stack.
+      \item SSA is performed only for registers, not memory locations.
+      \item Choice of type essential for optimization.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Control flow instruction examples}
+  \begin{exampleblock}{Infinite loop that counts from 0 on up\ldots}
+    \begin{lstlisting}{}
+      LoopHeader:
+        ...
+        br label %Loop
+
+      Loop:
+        %IndVar = phi i32 [ 0, %LoopHeader ], [ %NextIndVar, %Loop ]
+        %NextIndVar = add i32 %IndVar, 1
+        br label %Loop
+    \end{lstlisting}
+  \end{exampleblock}
+
+  \begin{block}{First basic control flow graph!}
+    \begin{itemize}
+      \item $\phi(\ldots)$ syntax: \verb+<result> = phi <type> [<val0>, <label0>], ...+
+      \item $\phi(\ldots)$ states:
+        \begin{itemize}
+          \item how control flow can reach given node?
+          \item which value to select depending on previous node?
+        \end{itemize}
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Call instruction examples}
+  \begin{exampleblock}{Function call examples:}
+    \begin{lstlisting}{}
+      %retval = call i32 @test(i32 %argc)
+      call i32 (i8*, ...)* @printf(i8* %msg, i32 12, i8 42)
+      %X = tail call i32 @foo()
+      %struct.A = type { i32, i8 }
+      %r = call %struct.A @bar()
+      %Z = call void @foo() noreturn
+    \end{lstlisting}
+  \end{exampleblock}
+
+  \begin{block}{Comments:}
+    \begin{itemize}
+      \item Different calling convention (\verb+fastcc+, \verb+ghc+, \ldots)
+      \item \verb+varargs+ functions supported.
+      \item Can return compound and aggregate types.
+      \item Special attribute for tail-call optimization.
+      \item \verb+invoke+ supports exceptions.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Compilation unit}
+  \begin{block}{Each compilation unit in LLVM should be composed of:}
+    \begin{itemize}
+      \item locally used compound type declarations,
+      \item local function definitions (with attributes / external visibility),
+      \item external function declarations,
+      \item architecture information and metadata (e.g. for debugging
+        purposes).
+    \end{itemize}
+  \end{block}
+
+  \begin{exampleblock}{All four composites of LLVM module:}
+    \begin{lstlisting}{}
+      target datalayout = "..."
+
+      @.str = private unnamed_addr constant [13 x i8] c"hello world\0A\00"
+
+      declare i32 @puts(i8* nocapture) nounwind
+
+      define i32 @main() 
+        %hello = getelementptr [13 x i8]* @.str, i64 0, i64 0
+        call i32 @puts(i8* %hello)
+        ret i32 0
+      }
+
+      !1 = metadata !{i32 42}
+    \end{lstlisting}
+  \end{exampleblock}
+\end{frame}
+
+\section[Compilation]{Compilation with LLVM}
+\subsection{Compiler workflow}
+
+\begin{frame}{Workflow}
+  \begin{block}{Front-end stages}
+    Completely up to the compiler implementation.
+    \begin{itemize}
+      \item Lexer (text $\rightarrow$ tokens)
+      \item Parser (tokens $\rightarrow$ AST)
+      \item Type checking (AST)
+      \item Lowering (AST $\rightarrow$ IL)
+      \item Transformations and optimizations (IL $\rightarrow$ IL)
+      \item Repeat 4 and 5 to obtain IL suitable for code generation.
+    \end{itemize}
+  \end{block}
+  
+  \begin{block}{High-level stages}
+    The compiler invokes LLVM APIs to obtain final LLVM IL.
+    \begin{itemize}
+      \item Lower IL to LLVM IL (IL $\rightarrow$ LLVM IL)
+      \item SSA normalization.
+      \item IR transformations (e.g. code instrumentation).
+      \item Optimizations based on SSA form (target information can be
+        employed).
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}{Workflow (cntd.)}
+  \begin{block}{Just-in-Time compilation}
+    We can stop at this stage! Execution engine.
+  \end{block}
+
+  \begin{block}{Mid-level stages}
+    Linking and IPO. At binary code level (not machine code).
+  \end{block}
+
+  \begin{block}{Low-level stages}
+    Code generation
+    \begin{itemize}
+      \item peephole optimizations
+      \item register assignment
+      \item instruction scheduling
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\subsection{Where to begin?}
+
+\begin{frame}{Weapon of choice}
+  LLVM written in C++. Bindings for many languages -- C, Python, Ocaml, Haskell
+  (experience may vary). 
+\end{frame}
+
+\begin{frame}{LLVM APIs}
+  List of LLVM libraries.
+\end{frame}
+
+\begin{frame}{LLVM vocabulary}
+  Building blocks.
+\end{frame}
+
+\subsection{Programming with LLVM}
+
+\begin{frame}{Function generation}
+  Prologue and epilogue.
+\end{frame}
+
+\begin{frame}{Arithmetic operations}
+  Simple calculator.
+\end{frame}
+
+\begin{frame}{Mutable variables}
+  Let's move away from functional realm.
+\end{frame}
+
+\begin{frame}[fragile]{Imperative statements transformation}
+  \verb+if-then-else+
+  \verb+while+
+\end{frame}
+
+\begin{frame}{Interfacing with garbage collector}
+  Accurate garbage collection with LLVM. Specifying roots.
+\end{frame}
+
+\begin{frame}{Jitting your code}
+  Execution engine details.
+\end{frame}
+
+\section[Infrastructure]{Infrastructure overview}
+\subsection{LLVM}
+
+\begin{frame}[fragile]{Tools}
+  \begin{block}{Standard LLVM installation offers a set of tools}
+    \begin{description}
+      \item[llvm-as] assembler (\verb+.ll+ $\rightarrow$ \verb+.bc+)
+      \item[llvm-dis] disassembler (\verb+.bc+ $\rightarrow$ \verb+.ll+)
+      \item[opt] bitcode optimizer
+      \item[llc] static compiler (\verb+.bc+ $\rightarrow$ \verb+.s+)
+      \item[lli] directly execute programs from bitcode (uses JIT)
+      \item[llvm-link] linker (\verb+.bc+$\{1,n\}$ $\rightarrow$ \verb+.bc+)
+      \item[llvm-config] print LLVM compilation options
+      \item[llvm-diff] structural \verb+diff+ over \verb+.ll+ files
+      \item[llvm-stress] generate random \verb+.ll+ files (backend testing)
+    \end{description}
+  \end{block}
+\end{frame}
+
+\subsection{Clang}
+
+\begin{frame}{Compiling with Clang}
+  Let's talk about Clang.
+\end{frame}
+
+\begin{frame}{Diagnostic messages}
+  C, C++.
+\end{frame}
+
+\begin{frame}{Assertion checking}
+  Chandler Carruth talk.
+\end{frame}
+
+\end{document}
