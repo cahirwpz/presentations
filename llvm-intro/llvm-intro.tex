@@ -6,7 +6,11 @@
 \usepackage{amsmath}
 \usepackage[normalem]{ulem}
 \usepackage{tikz}
+\usepackage{hyperref}
 \usepackage{listings}
+
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
 
 \lstset{
   basicstyle=\footnotesize\ttfamily,
@@ -59,8 +63,8 @@
 \begin{frame}[fragile]{Introduction}
   \begin{block}{LLVM is a software framework for building compilers.}
     \begin{itemize}
-      \item Well-defined intermediate code representation (aka LLVM IL -- \verb+.ll+ files).
-      \item Binary representation of LLVM IL (\verb+.bc+ files).
+      \item Well-defined intermediate code representation (aka LLVM IR -- \verb+.ll+ files).
+      \item Binary representation of LLVM IR (\verb+.bc+ files).
       \item Code generators for many hardware architectures (\verb+x86+,
         \verb+mips+, \verb+arm+, \verb+sparc+, \verb+ppc+).
       \item Low-level optimizations (triggered during code generation phase).
@@ -92,10 +96,10 @@
   \begin{exampleblock}{Notable LLVM uses:}
     \begin{itemize}
       \item Clang (C, C++, ObjC and ObjC++ front-end)
-      \item Compilers: Haskell, NVIDIA CUDA, 
+      \item Compilers: Haskell, NVIDIA CUDA, Erlang HiPE,
       \item Interpreters: PyPy, Mono, IcedTea, ClamAV,
       \item GPGPU: OpenCL, Apple's OpenGL,
-      \item LLDB -- GNU Debugger competitor
+      \item LLDB -- GNU Debugger competitor,
       \item ASAN and TSAN -- code instrumentation for debugging purposes,
       \item and so on\ldots (\href{http://llvm.org/Users.html}{LLVM Users})
     \end{itemize}
@@ -137,7 +141,7 @@
 \end{frame}
 
 \section[Overview]{Framework overview}
-\subsection{Program structure}
+\subsection*{Program structure}
 
 \begin{frame}{Stream of instructions}
   \begin{block}{How CPU perceives a program?}
@@ -190,7 +194,7 @@
   \end{block}
 \end{frame}
 
-\subsection{LLVM intermediate language}
+\subsection*{LLVM intermediate language}
 
 \begin{frame}[fragile]{Virtual machine model}
   \begin{block}{Implemented model:}
@@ -454,8 +458,46 @@
   \end{exampleblock}
 \end{frame}
 
+\begin{frame}[fragile]{Another example}
+  \begin{exampleblock}{Two ways to add integers:}
+    \begin{lstlisting}[language=C,basicstyle=\tiny\ttfamily]
+      unsigned add1(unsigned a, unsigned b) {
+        return a+b;
+      }
+
+      unsigned add2(unsigned a, unsigned b) {
+        if (a == 0) return b;
+        return add2(a-1, b+1);
+      }
+    \end{lstlisting}
+
+    \begin{lstlisting}[basicstyle=\tiny\ttfamily,]
+      define i32 @add1(i32 %a, i32 %b) {
+        entry:
+          %tmp1 = add i32 %a, %b
+          ret i32 %tmp1
+      }
+
+      define i32 @add2(i32 %a, i32 %b) {
+        entry:
+          %tmp1 = icmp eq i32 %a, 0
+          br i1 %tmp1, label %done, label %recurse
+
+        recurse:
+          %tmp2 = sub i32 %a, 1
+          %tmp3 = add i32 %b, 1
+          %tmp4 = call i32 @add2(i32 %tmp2, i32 %tmp3)
+          ret i32 %tmp4
+
+        done:
+          ret i32 %b
+      }
+    \end{lstlisting}
+  \end{exampleblock}
+\end{frame}
+
 \section[Compilation]{Compilation with LLVM}
-\subsection{Compiler workflow}
+\subsection*{Compiler workflow}
 
 \begin{frame}{Workflow}
   \begin{block}{Front-end stages}
@@ -471,10 +513,10 @@
   \end{block}
   
   \begin{block}{High-level stages}
-    The compiler invokes LLVM APIs to obtain final LLVM IL.
+    The compiler invokes LLVM APIs to obtain final LLVM IR.
     \begin{itemize}
-      \item Lower IL to LLVM IL (IL $\rightarrow$ LLVM IL)
-      \item SSA normalization.
+      \item Lower IL to LLVM IR (IL $\rightarrow$ LLVM IR)
+      \item SSA normalization (aka well-formedness).
       \item IR transformations (e.g. code instrumentation).
       \item Optimizations based on SSA form (target information can be
         employed).
@@ -482,69 +524,110 @@
   \end{block}
 \end{frame}
 
-\begin{frame}{Workflow (cntd.)}
+\begin{frame}{Workflow (cont.)}
   \begin{block}{Just-in-Time compilation}
-    We can stop at this stage! Execution engine.
+    We can stop at this stage! Compile functions and their dependencies on
+    demand. Create activation record and pass control to the function.
   \end{block}
 
   \begin{block}{Mid-level stages}
-    Linking and IPO. At binary code level (not machine code).
+    Linking and link-time optimization. Still at binary code level. Little user
+    control.
   \end{block}
 
   \begin{block}{Low-level stages}
-    Code generation
+    Fully controlled by LLVM target back-end. Optimizations at instruction
+    level. Machine code generation:
     \begin{itemize}
-      \item peephole optimizations
-      \item register assignment
+      \item instruction selection
       \item instruction scheduling
+      \item register assignment
+      \item peephole optimization
     \end{itemize}
   \end{block}
 \end{frame}
 
-\subsection{Where to begin?}
+\subsection*{Where to begin?}
 
-\begin{frame}{Weapon of choice}
-  LLVM written in C++. Bindings for many languages -- C, Python, Ocaml, Haskell
-  (experience may vary). 
+\begin{frame}{Choose your tools wisely!}
+  \begin{alertblock}{}
+    \begin{itemize}
+      \item Programming language is only a tool!
+      \item LLVM and Clang are written in \texttt{C++}
+      \item If you choose not to use \texttt{C++}, keep in mind that you're
+        still supposed to know it.
+      \item Debugging can be tricky!
+      \item Documentation for anything else than \texttt{C++} is scarce.
+    \end{itemize}
+  \end{alertblock}
+
+  \begin{block}{Bindings for many languages (but experience may vary)}
+    \begin{description}
+      \item[\texttt{C}] only useful for building bindings to other languages
+      \item[\texttt{Python}] convenient for simple tools
+      \item[\texttt{Ocaml}] bindings included in LLVM source tree (but not
+        of high quality)
+      \item[\texttt{Haskell}] LLVM is used for GHC, so bindings are presumably
+        well tested
+    \end{description}
+  \end{block}
+
+  \begin{exampleblock}{}
+    My personal choice? I went with \texttt{Ocaml} and I'm not pleased. Curious
+    if \texttt{Haskell} is really better for that purpose. But that's
+    completely different story.
+  \end{exampleblock}
 \end{frame}
 
-\begin{frame}{LLVM APIs}
-  List of LLVM libraries.
+\begin{frame}{LLVM's vocabulary}
+  \begin{block}{Before you start reading tutorials, understanding following
+      terms is crucial:}
+    \begin{description}
+      \item[Type] describes any type that exists within framework
+      \item[Value] all (possibly named) first-class typed entities (incl.
+        insns and funs)
+      \item[Constant] data-like values may be immutable 
+      \item[GlobalValue] variables and functions within specific module;
+        may be externally visible; has \emph{Constant} address
+      \item[GlobalVariable] may be initialized with \emph{Constant}; dynamic
+        initialization requires use of \texttt{llvm.global\_ctors} and
+        \texttt{llvm.global\_dtors}
+      \item[Instruction] values that represent all available instructions
+      \item[BasicBlock] contains instructions, must finish with terminator
+        instruction; counterpart of node in \emph{CFG}s
+      \item[Function] keeps track of a list of \emph{BasicBlock}s, formal
+        \emph{Argument}s and a \emph{SymbolTable}
+      \item[Argument] incoming formal argument to a \emph{Function}
+      \item[Module] one or more constitute a program; merged by linker; keeps
+        track of \emph{Function}s, \emph{GlobalVariable}s and \emph{SymbolTable}s
+      \item[SymbolTable] provides a map that \emph{Function} or \emph{Module}
+        uses for naming values
+      \item[LLVMContext] provides isolation (separate compilation ctxs); stores
+        type information
+    \end{description}
+  \end{block}
 \end{frame}
 
-\begin{frame}{LLVM vocabulary}
-  Building blocks.
+\begin{frame}{Generating LLVM IR}
+  \begin{exampleblock}{}
+    Great tutorial for \texttt{C++} and \texttt{Ocaml} on LLVM's web page
+    (Kaleidoscope). We can discuss an interesting excerpt from it right know,
+    if you want.
+  \end{exampleblock}
+
+  \begin{block}{Kaleidoscope example covers:}
+    \begin{itemize}
+      \item external function declarations,
+      \item function generation (prologue and epilogue),
+      \item arithmetic operations on \emph{double}s,
+      \item simple flow control (\texttt{if-then-else} and \texttt{for}
+        statements)
+      \item mutable and local variables,
+      \item adding optimization passes,
+      \item executing the code with JIT engine.
+    \end{itemize}
+  \end{block}
 \end{frame}
-
-\subsection{Programming with LLVM}
-
-\begin{frame}{Function generation}
-  Prologue and epilogue.
-\end{frame}
-
-\begin{frame}{Arithmetic operations}
-  Simple calculator.
-\end{frame}
-
-\begin{frame}{Mutable variables}
-  Let's move away from functional realm.
-\end{frame}
-
-\begin{frame}[fragile]{Imperative statements transformation}
-  \verb+if-then-else+
-  \verb+while+
-\end{frame}
-
-\begin{frame}{Interfacing with garbage collector}
-  Accurate garbage collection with LLVM. Specifying roots.
-\end{frame}
-
-\begin{frame}{Jitting your code}
-  Execution engine details.
-\end{frame}
-
-\section[Infrastructure]{Infrastructure overview}
-\subsection{LLVM}
 
 \begin{frame}[fragile]{Tools}
   \begin{block}{Standard LLVM installation offers a set of tools}
@@ -562,18 +645,88 @@
   \end{block}
 \end{frame}
 
-\subsection{Clang}
+\subsection*{Extra features}
 
-\begin{frame}{Compiling with Clang}
-  Let's talk about Clang.
+\begin{frame}{Interfacing with garbage collector}
+  \begin{alertblock}{}
+    Runtime generates a directed graph of memory blocks -- pointers are
+    outgoing edges. Some blocks are in use (active). How are we supposed to
+    find inactive blocks?
+  \end{alertblock}
+
+  \begin{block}{\textit{GC roots}}
+    Point to a digraph of active memory blocks. Exist \textbf{on stack} or
+    \textbf{in registers}.
+  \end{block}
+
+  \begin{block}{Two approaches to garbage collection}
+    \begin{description}
+      \item[conservative] Traverses the stack and registers to find gc roots.
+        Interprets data as pointers. False positives possible. Inhibits object
+        moving. Can be added to language without GC. Good for non-type-safe
+        languages. 
+      \item[accurate] Maintains stack map. Requires compiler support.
+        Compaction possible (but requires stack map update). Some optimization
+        techniques less effective.
+    \end{description}
+  \end{block}
+  
+  \begin{exampleblock}{}
+    LLVM delivers built-in \textbf{ShadowStack} code generator -- i.e. a code
+    transformation plugin that instruments the code to work with the GC.
+  \end{exampleblock} 
 \end{frame}
 
-\begin{frame}{Diagnostic messages}
-  C, C++.
+\begin{frame}[fragile]{Interfacing with garbage collector (cont.)}
+  \begin{block}{LLVM delivers mechanisms for accurate garbage collection:}
+    \begin{itemize}
+      \item creation of GC-safe points within code,
+      \item computation of the stack map,
+      \item emission of read / write barriers (concurrent garbage collection).
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{How to get it working with \textit{ShadowStack}:}
+    \begin{itemize}
+      \item find a runtime library which implements a GC heap (e.g. Boehm GC),
+      \item implement a collection routine,
+      \item design a binary interface for type maps,
+      \item initialize GC in the main function,
+      \item use the \verb+gc "..."+ attribute to enable GC code generation,
+      \item use \verb+@llvm.gcroot+ to mark stack roots,
+      \item use \verb+@llvm.gcread+ / \verb+@llvm.gcwrite+ to manipulate GC
+        references,
+      \item allocate memory using the GC allocation,
+      \item generate type maps according to your runtime's binary interface,
+      \item compile LLVM's stack map to the binary form expected by the
+        runtime.
+    \end{itemize}
+  \end{block}
 \end{frame}
 
-\begin{frame}{Assertion checking}
-  Chandler Carruth talk.
+\section[Miscellaneous]{Miscellaneous}
+\subsection*{}
+
+\begin{frame}{Links}
+  \begin{block}{Target back-ends:}
+    \begin{itemize}
+      \item \href{http://jonathan2251.github.com/lbd/}{Write An LLVM Backend Tutorial For Cpu0}
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Clang links:}
+    \begin{itemize}
+      \item
+        \href{http://llvm.org/devmtg/2011-11/Hutchins_ThreadSafety.pdf}{Thread
+          Safety Annotations for Clang}
+      \item \href{http://llvm.org/devmtg/2012-11/Gregor-Modules.pdf}{Modules
+          (for C)}
+      \item
+        \href{http://llvm.org/devmtg/2012-11/Serebryany_TSan-MSan.pdf}{MemorySanitizer,
+          ThreadSanitizer. Scalable run-time detection of uninitialized memory
+          reads and data races with LLVM instrumentation.}
+    \end{itemize}
+  \end{block}
 \end{frame}
 
 \end{document}
