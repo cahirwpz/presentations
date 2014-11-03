@@ -1,4 +1,4 @@
-FILE = llvm-intro
+FILE = llvm-ir
 
 all:	$(FILE).pdf
 
