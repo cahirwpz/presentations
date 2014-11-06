@@ -218,9 +218,20 @@
         algorithms.
       \item Some optimizations are available almost for free (eg. dead code
         elimination).
-      \item Well known algorithm for SSA transformation (dominance frontiers).
     \end{itemize}
   \end{block}
+\end{frame}
+
+\begin{frame}{Normalization and lowering.}
+  There's well known algorithm to transform code into SSA form (dominance frontiers).
+
+  Lowering looses information.
+\end{frame}
+
+\begin{frame}{Optimization levels}
+  function level
+  IPO
+  LTO
 \end{frame}
 
 \subsection*{Real world}
@@ -360,6 +371,12 @@
       \item Size of machine data types (integer, float, etc.)?
     \end{itemize}
   \end{block}
+\end{frame}
+
+\begin{frame}{Linker}
+\end{frame}
+
+\begin{frame}{Run-time environment}
 \end{frame}
 
 \section[Features]{LLVM features}
@@ -555,13 +572,13 @@
 \end{frame}
 
 \begin{frame}[fragile]{Compilation unit}
-  \begin{block}{Each compilation unit in LLVM should be composed of:}
+  \begin{block}{Each compilation unit comprise of:}
     \begin{itemize}
-      \item locally used compound type declarations,
-      \item local function definitions (with attributes / external visibility),
-      \item external function declarations,
-      \item architecture information and metadata (e.g. for debugging
-        purposes).
+      \item locally visible compound type declarations,
+      \item function definitions (with attributes / visibility specifiers),
+      \item global variables,
+      \item external function (pointer) type declarations,
+      \item architecture information and metadata (e.g. for debugging)
     \end{itemize}
   \end{block}
 
@@ -622,6 +639,34 @@
       }
     \end{minted}
   \end{exampleblock}
+\end{frame}
+
+\section*{The End}
+
+\begin{frame}[fragile]{LLVM links}
+  \begin{block}{Research links:}
+    \begin{itemize}
+      \item LLVM Related Publications
+      \item LLVM Developers' Meeting
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Presentation and papers about LLVM and verification:}
+    \begin{itemize}
+      \item Verifying optimizations using SMT solvers
+      \item Formal Verification of SSA-Based Optimizations for LLVM
+      \item Verified LLVM: Formalizing the semantics of the LLVM Intermediate
+        Representation for Verified Program Transformations
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}{}
+  \vspace*{\stretch{2}}
+  \begin{center}
+    Questions?
+  \end{center}
+  \vspace{\stretch{3}}
 \end{frame}
 
 \end{document}
