@@ -1,4 +1,4 @@
-FILE = intro
+FILE = exceptions
 
 all:	$(FILE).pdf
 

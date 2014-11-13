@@ -1,3 +1,4 @@
+\PassOptionsToPackage{subsection=false}{beamerouterthememiniframes}
 \documentclass[8pt]{beamer}
 
 \usepackage[utf8]{inputenc}
@@ -11,6 +12,9 @@
 \usepackage{color}
 \usepackage{fancyvrb}
 \usepackage{minted}
+
+\usepackage{mathptmx}
+\usepackage[scaled=0.9]{helvet}
 
 \definecolor{links}{HTML}{2A1B81}
 \hypersetup{colorlinks,linkcolor=,urlcolor=links}
@@ -42,7 +46,7 @@
   \end{frame}
 }
 
-\title[LLVM]{LLVM: Low Level Virtual Machine\\LLVM Intermediate Representation}
+\title[LLVM]{LLVM: Low Level Virtual Machine\\Theory and practice}
 \author[Krystian Bacławski]{\href{mailto:cahirwpz@cs.uni.wroc.pl}{Krystian Bacławski}}
 \institute{Computer Science Department\\University of Wrocław}
 \date{\today}
@@ -53,8 +57,8 @@
 \titlepage
 \end{frame}
 
-\section[Intro]{Introduction}
-\subsection*{Ideal world}
+\section[Theory]{Theoretical overview}
+\subsection*{Theory}
 
 \begin{frame}{Stream of instructions}
   \begin{block}{What really does CPU execute?}
@@ -222,19 +226,55 @@
   \end{block}
 \end{frame}
 
-\begin{frame}{Normalization and lowering.}
-  There's well known algorithm to transform code into SSA form (dominance frontiers).
+\begin{frame}{Compilation process}
+  % There's well known algorithm to transform code into SSA form (dominance frontiers).
 
-  Lowering looses information.
+  \begin{block}{Code analysis and transformations}
+    \begin{itemize}
+      \item High-level -- language specific.
+      \item Intermediate level -- generic optimizations for different languages
+        (predominantly some form of CFG with SSA instructions).
+      \item Code generation -- processor specific.
+    \end{itemize}
+    \textbf{Depending on the language low-level details are important at each
+      level -- think of GPGPUs or other specialised architectures.}
+  \end{block}
+
+  \begin{block}{Lowering}
+    When we're done with optimizations and analysis at given level we have to
+    perform lowering phase. It has to correctly transform one code form to
+    another.
+  \end{block}
+
+  \begin{alertblock}{Implications?}
+    \begin{itemize}
+      \item Each time lowering looses information! (about types, program
+        structure, etc.)
+      \item How to make association between program counter and source line?
+    \end{itemize}
+  \end{alertblock}
 \end{frame}
 
-\begin{frame}{Optimization levels}
-  function level
-  IPO
-  LTO
+\begin{frame}{Optimisations}
+  \begin{block}{Compilation unit (module or object)}
+    Defines several symbols that refer to functions, global variables and other
+    resources specific to the language. Symbols are usually untyped, have
+    assigned visiblity and other linkage attributes.
+  \end{block}
+
+  \begin{block}{Scope}
+    We can optimize or analyse the code at several levels:
+    \begin{itemize}
+      \item instruction window -- instruction scheduling and selection,
+      \item function -- constant folding, loop optimizations,
+      \item inter-procedural optimizations (IPO) -- e.g. inlining and specialisation.
+      \item link-time optimizations (LTO) -- aka inter-module optimizations.
+    \end{itemize}
+  \end{block}
 \end{frame}
 
-\subsection*{Real world}
+\section[Practice]{Practical considerations}
+\subsection*{Practical considerations}
 
 \begin{frame}{Processor model}
   \begin{block}{RISC architecture}
@@ -265,7 +305,7 @@
   \begin{alertblock}{Problems with DRAM}
     Memories are several hundred times slower than registers. Memory technology
     could not follow up processors for last 30 years! Processors can calculate
-    very quickly, but how to feed them with instruction and data at desired
+    very quickly, but how to feed them with instruction and data at a desired
     rate.
   \end{alertblock}
 
@@ -280,11 +320,39 @@
     \begin{itemize}
       \item Cache memory -- stores working set, block transfer.
       \item Delayed writing -- write-back policy.
-      \item Prefetching and speculation.
+      \item Prefetching and speculative loads.
     \end{itemize}
     \vspace{1em}
     \textbf{Compilers perform cache-aware optimizations but only w.r.t.
       instruction stream.}
+  \end{block}
+\end{frame}
+
+\begin{frame}{Memory model}
+  \begin{alertblock}{}
+    Instruction results and side-effect may become observable with some delay,
+    especially in multiprocessor NUCA systems.
+  \end{alertblock}
+
+  \begin{block}{Consistency model}
+    \begin{description}
+      \item[strict] a read operation shall return the value written by the
+        most recent store operation,
+      \item[sequential] the result of an execution is the same as a single
+        interleaving of sequential, program-order access from different
+        processors,
+      \item[processor] writes from a process are observed by other clients to
+        be in program order; all clients observe a single interleaving of
+        writes from different processors,
+      \item[partial store order] freely reorder local writes with respect to
+        other local writes,
+      \item[weak] freely reorder local writes ahead of local reads,
+      \item[release] when software does \textit{acquire} or \textit{release},
+        the memory system updates all protected variables before continuing
+        (memory barrier instruction needed).
+    \end{description}
+    \textbf{Compilers have to know the model -- otherwise they cannot apply
+      certain optimisations!}
   \end{block}
 \end{frame}
 
@@ -321,7 +389,7 @@
 \begin{frame}{ILP exploitation techniques}
   \begin{alertblock}{}
     Many papers about observed ILP. Conclusions not decisive -- advancements in
-    compiler and processor technology change assumptions every $n$ years.
+    compiler and processor technology change assumptions every couple of years.
   \end{alertblock}
 
   \begin{block}{Most successful techniques}
@@ -343,6 +411,14 @@
     \textbf{Widely accepted methods of program encoding seems to be highly
       ineffective!}
   \end{alertblock}
+\end{frame}
+
+\begin{frame}{Microarchitecture}
+  \begin{figure}
+    \centering
+    \includegraphics[width=0.75\textwidth]{microarchitecture.png}
+    \caption{Common framework for modern microarchitectures.}
+  \end{figure}
 \end{frame}
 
 \begin{frame}{Application Binary Interface}
@@ -373,290 +449,33 @@
   \end{block}
 \end{frame}
 
-\begin{frame}{Linker}
-\end{frame}
-
-\begin{frame}{Run-time environment}
-\end{frame}
-
-\section[Features]{LLVM features}
-\subsection*{LLVM machine model}
-
-\begin{frame}[fragile]{Virtual machine model}
-  \begin{block}{Implemented model:}
+\begin{frame}{Linking \& running}
+  \begin{block}{Static and dynamic linkers}
     \begin{itemize}
-      \item Register based machine -- infinite number of virtual registers.
-      \item Implicit stack -- no stack management else than variable placement.
-      \item Instruction stream in SSA (static single assignment) form.
-      \item Strongly typed machine:
-        \begin{itemize}
-          \item explicit coercions between numeric machine types,
-          \item typed pointers!
-        \end{itemize}
-      \item RISC-like load-store approach to memory access.
-      \item Compound (structures) and aggregate types (vectors).
-      \item Heavily influenced by \verb+C+ language but versatile enough.
-    \end{itemize}
-  \end{block}
-  
-  \begin{block}{Some interesting extra features:}
-    \begin{itemize}
-      \item Language agnostic exception handling (incl. DWARF2 stack unwinding).
-      \item Support for accurate garbage collection.
-      \item Atomic memory access for concurrent programming.
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Types}
-  \begin{block}{Type system of LLVM:}
-    \begin{itemize}
-      \item Machine oriented!
-      \item Types known from C language: integer, floating point, label,
-        void, array, function, pointer, structure (but no unions!)
-      \item \ldots and LLVM specific: vector (for SIMD), opaque (forward
-        declaration).
-      \item Most types are first-class. You cannot create a function type.
-        However it's valid to create a pointer to function type.
+      \item Handle loadable and linkable files specific for particular OS.
+        ELF is specified by ABI.
+      \item Handle cross-references at link-time -- modules contain a
+        list of symbols and relocations.
+      \item Code intended for dynamic linking must be compiled separately.
+      \item Dynamic linker lives as a part of program (lazy binding, on-demand
+        loading).
     \end{itemize}
   \end{block}
 
-  \begin{block}{Type notation:}
-    \begin{description}
-      \item[i1] boolean represented as a single-bit integer
-      \item[array] \verb+[ <#elements> x <element type> ]+
-      \item[vector] \verb+< <#elements> x <element type> >+
-      \item[structure] \verb+type { <type list> }+
-    \end{description}
-  \end{block}
-\end{frame}
-
-\section[Language]{LLVM language}
-\subsection*{LLVM IR basics}
-
-\begin{frame}[fragile]{Values}
-  \begin{block}{Values:}
+  \begin{block}{Run-time environment}
+    Is specific to every language, however they share common functionalities:
     \begin{itemize}
-      \item special: \verb+null+, \verb+true+, \verb+false+, \verb+undef+,
-        \verb+zeroinitializer+.
-      \item notion of being constant.
+      \item start-up code -- quite complex entity that calls "main" function,
+      \item set of basic functions as defined by language specification,
+      \item dynamic loader / linker -- to import binary modules / libraries.
     \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Instructions}
-  \begin{block}{}
+    In higher level languages run-time environment additionally may comprise of:
     \begin{itemize}
-      \item Arithmetic instructions:
-        \begin{itemize}
-          \item integer: \verb+add+, \verb+sub+, \verb+mul+, \verb+udiv+,
-            \verb+sdiv+, \verb+urem+, \verb+srem+, \verb+icmp+
-          \item floating-point: \verb+fadd+, \verb+fsub+, \verb+fmul+, \verb+fdiv+,
-            \verb+frem+, \verb+fcmp+
-        \end{itemize}
-
-      \item Bitwise instructions:
-        \begin{itemize}
-          \item bit-shift: \verb+shl+, \verb+lshr+, \verb+ashr+
-          \item boolean: \verb+and+, \verb+or+, \verb+xor+
-        \end{itemize}
-
-      \item Control flow instructions:
-        \begin{itemize}
-          \item function calls: \verb+invoke+, \verb+call+, \verb+ret+
-          \item jumping: \verb+br+, \verb+switch+, \verb+indirectbr+
-          \item other: \verb+phi+, \verb+select+
-        \end{itemize}
-
-      \item Memory access instructions:
-        \begin{itemize}
-          \item stack space allocation: \verb+alloca+
-          \item generic accessors: \verb+load+, \verb+store+
-        \end{itemize}
-
-      \item Compound data access instructions:
-        \begin{itemize}
-          \item vectors: \verb+extractelement+, \verb+insertelement+, \verb+shufflevector+
-          \item aggregates: \verb+extractvalue+, \verb+insertvalue+
-          \item other: \verb+getelementptr+
-        \end{itemize}
-
-      \item Data conversion instructions:
-        \begin{itemize}
-          \item integer: \verb+trunc+, \verb+zext+ \verb+sext+
-          \item floating-point: \verb+fptrunc+, \verb+fpext+, \verb+fptoui+,
-            \verb+fptosi+, \verb+uitofp+, \verb+sitofp+,
-          \item pointers: \verb+ptrtoint+, \verb+inttoptr+, \verb+bitcast+
-        \end{itemize}
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Non-control flow instruction examples}
-  \begin{exampleblock}{}
-    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
-      %r0 = add i32 4, %num                             ; r0 := 4 + %num
-      %r1 = fdiv float 11.0, %fp                        ; r1 := %fp / 11.0
-      %r2 = or i1 %b1, %b2                              ; r2 := %b1 || %b2
-      %r4 = extractelement <4 x i32> %vec, i32 0        ; r4 := %vec[0]
-      %r5 = insertvalue {i32, float} %agg, float %v, 1  ; r5 := %agg{[1] = %v}
-      %ptr = alloca i32                                 ; {i32 *}
-      store i32 3, i32* %ptr                            ; void : *(%ptr) = 3
-      %v = load i32* %ptr                               ; i32 : v := *(%ptr)
-      %p = icmp eq i32 %n, 0                            ; bool : p := (%n = 0)
-      %z = select i1 %p, i8 %x, i8 %y                   ; %z = %p ? %x : %y
-    \end{minted}
-  \end{exampleblock}
-
-  \begin{block}{Comments:}
-    \begin{itemize}
-      \item Integer: different signedness and word size possible, overflow
-        control.
-      \item Floating-point: different word size possible, compliance with
-        \verb+IEEE754+.
-      \item Boolean calculation for \verb+i1+ type.
-      \item \verb+alloca+ is the only instruction dealing with stack.
-      \item SSA is performed only for registers, not memory locations.
-      \item Choice of type essential for optimization.
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Control flow instruction examples}
-  \begin{exampleblock}{Infinite loop that counts from 0 on up\ldots}
-    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
-      LoopHeader:
-        ...
-        br label %Loop
-
-      Loop:
-        %IndVar = phi i32 [ 0, %LoopHeader ], [ %NextIndVar, %Loop ]
-        %NextIndVar = add i32 %IndVar, 1
-        br label %Loop
-    \end{minted}
-  \end{exampleblock}
-
-  \begin{block}{First basic control flow graph!}
-    \begin{itemize}
-      \item $\phi(\ldots)$ syntax: \verb+<result> = phi <type> [<val0>, <label0>], ...+
-      \item $\phi(\ldots)$ states:
-        \begin{itemize}
-          \item how control flow can reach given node?
-          \item which value to select depending on previous node?
-        \end{itemize}
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Call instruction examples}
-  \begin{exampleblock}{Function call examples:}
-    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
-      %retval = call i32 @test(i32 %argc)
-      call i32 (i8*, ...)* @printf(i8* %msg, i32 12, i8 42)
-      %X = tail call i32 @foo()
-      %struct.A = type { i32, i8 }
-      %r = call %struct.A @bar()
-      %Z = call void @foo() noreturn
-    \end{minted}
-  \end{exampleblock}
-
-  \begin{block}{Comments:}
-    \begin{itemize}
-      \item Different calling convention (\verb+fastcc+, \verb+ghc+, \ldots)
-      \item \verb+varargs+ functions supported.
-      \item Can return compound and aggregate types.
-      \item Special attribute for tail-call optimization.
-      \item \verb+invoke+ supports exceptions.
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Compilation unit}
-  \begin{block}{Each compilation unit comprise of:}
-    \begin{itemize}
-      \item locally visible compound type declarations,
-      \item function definitions (with attributes / visibility specifiers),
-      \item global variables,
-      \item external function (pointer) type declarations,
-      \item architecture information and metadata (e.g. for debugging)
-    \end{itemize}
-  \end{block}
-
-  \begin{exampleblock}{All four composites of LLVM module:}
-    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
-      target datalayout = "..."
-
-      @.str = private unnamed_addr constant [13 x i8] c"hello world\0A\00"
-
-      declare i32 @puts(i8* nocapture) nounwind
-
-      define i32 @main() 
-        %hello = getelementptr [13 x i8]* @.str, i64 0, i64 0
-        call i32 @puts(i8* %hello)
-        ret i32 0
-      }
-
-      !1 = metadata !{i32 42}
-    \end{minted}
-  \end{exampleblock}
-\end{frame}
-
-\subsection*{LLVM IR examples}
-
-\begin{frame}[fragile]{Another example}
-  \begin{exampleblock}{Two ways to add integers:}
-    \begin{minted}[gobble=6,linenos,fontsize=\footnotesize]{c}
-      unsigned add1(unsigned a, unsigned b) {
-        return a+b;
-      }
-
-      unsigned add2(unsigned a, unsigned b) {
-        if (a == 0) return b;
-        return add2(a-1, b+1);
-      }
-    \end{minted}
-
-    \begin{minted}[gobble=6,linenos,fontsize=\footnotesize]{llvm}
-      define i32 @add1(i32 %a, i32 %b) {
-        entry:
-          %tmp1 = add i32 %a, %b
-          ret i32 %tmp1
-      }
-
-      define i32 @add2(i32 %a, i32 %b) {
-        entry:
-          %tmp1 = icmp eq i32 %a, 0
-          br i1 %tmp1, label %done, label %recurse
-
-        recurse:
-          %tmp2 = sub i32 %a, 1
-          %tmp3 = add i32 %b, 1
-          %tmp4 = call i32 @add2(i32 %tmp2, i32 %tmp3)
-          ret i32 %tmp4
-
-        done:
-          ret i32 %b
-      }
-    \end{minted}
-  \end{exampleblock}
-\end{frame}
-
-\section*{The End}
-
-\begin{frame}[fragile]{LLVM links}
-  \begin{block}{Research links:}
-    \begin{itemize}
-      \item LLVM Related Publications
-      \item LLVM Developers' Meeting
-    \end{itemize}
-  \end{block}
-
-  \begin{block}{Presentation and papers about LLVM and verification:}
-    \begin{itemize}
-      \item Verifying optimizations using SMT solvers
-      \item Formal Verification of SSA-Based Optimizations for LLVM
-      \item Verified LLVM: Formalizing the semantics of the LLVM Intermediate
-        Representation for Verified Program Transformations
+      \item coroutines library -- lightweight threads, continuations,
+      \item stack unwinding -- exceptions and other non-local jumps,
+      \item foreign function interface -- for calling C language libraries,
+      \item garbage collector -- either accurate or conservative,
+      \item \ldots and other low-level routines not expressible in the language.
     \end{itemize}
   \end{block}
 \end{frame}
@@ -664,7 +483,7 @@
 \begin{frame}{}
   \vspace*{\stretch{2}}
   \begin{center}
-    Questions?
+    {\Huge Questions?}
   \end{center}
   \vspace{\stretch{3}}
 \end{frame}

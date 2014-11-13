@@ -1,0 +1,233 @@
+\documentclass[8pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+
+\lstset{
+  basicstyle=\footnotesize\ttfamily,
+  numbers=left,
+  numbersep=-2em,
+  numberstyle=\color{gray}
+}
+
+\usetikzlibrary{shapes,arrows,automata}
+
+\tikzset{
+  vertex/.style={
+    rectangle,
+    rounded corners,
+    draw=black, thick,
+    text centered
+  },
+}
+
+\mode<beamer>
+{
+  \usetheme{Frankfurt}
+  \useoutertheme{miniframes}
+  \setbeamercovered{transparent}
+}
+
+\subject{Talks}
+
+\AtBeginSection[]
+{
+  \begin{frame}<beamer>{}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\title[LLVM]{LLVM: Low Level Virtual Machine\\Exception handling}
+\author[Krystian Bacławski]{\href{mailto:cahirwpz@cs.uni.wroc.pl}{Krystian Bacławski}}
+\institute{Computer Science Department\\University of Wrocław}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\section[Exception handling]{Exception handling with LLVM}
+\subsection*{}
+
+\begin{frame}[fragile]{Constituents of exception handling}
+  \begin{block}{Two ways to implement exceptions:}
+    \begin{description}
+      \item[non-local jumps] known as \texttt{setjmp} and \texttt{longjmp};
+        saves whole context at \texttt{setjmp} thus expensive; no value
+        associated with \texttt{throw} statement; how to clean up the stack at
+        \texttt{longjmp}?
+      \item[stack unwind] requires elaborate runtime and compiler support;
+        during stack unwind, which registers were modified
+        (\texttt{DWARF2}-like information) and how to restore them? exception
+        conveys certain typed value; for each function a static table of
+        handler routines;
+    \end{description}
+  \end{block}
+
+  \begin{alertblock}{}
+    Although LLVM delivers quite generic exception handling, the slides are
+    \verb|C++| oriented.
+  \end{alertblock}
+
+  \begin{exampleblock}{References}
+    \begin{itemize}
+      \item
+        \href{http://llvm.org/devmtg/2011-09-16/EuroLLVM2011-ExceptionHandling.pdf}{The
+          new LLVM exception handling scheme}
+      \item \href{http://llvm.org/docs/ExceptionHandling.html}{Exception Handling
+          in LLVM}
+      \item \href{http://mentorembedded.github.com/cxx-abi/abi-eh.html}{Itanium
+          C++ ABI: Exception Handling}
+    \end{itemize}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Implementation of \texttt{throw}, \texttt{try},
+    \texttt{catch}, \texttt{finally}.}
+  \begin{block}{How to throw an exception?}
+    \begin{itemize}
+      \item Allocate space for an exception structure
+        (\verb+__cxa_allocate_exception+) outside of the stack, and fill it in.
+      \item Call runtime function with the structure as an argument
+        (\verb+__cxa_throw+) that will initiate stack unwinding.
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{How to construct \texttt{try} statement?}
+    We need to decorate each function call within \texttt{try} statement. Thus
+    requirement for \textbf{invoke} instruction that will behave as a function
+    call instruction, but will specify \textbf{landing pad} in case stack
+    unwinding was triggered.
+  \end{block}
+
+  \begin{block}{What the heck is personality function?}
+    For each stack frame, \textbf{personality function} answers a question: does
+    a function want to handle the exception or not (information stored in
+    \verb+.ex_frame+). It's invoked by stack unwinder. If the answer was yes,
+    then control flow is passed to a \textbf{landing pad} together with the
+    exception structure.
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Implementation of \texttt{throw}, \texttt{try},
+    \texttt{catch}, \texttt{finally} (cont.)}
+  \begin{block}{Exception filtering}
+    Some languages allow to specify that a function is not supposed to throw
+    certain exceptions. If it happens, a handler should make a call
+    to \verb+__cxa_call_unexpected+.
+  \end{block}
+
+  \begin{block}{Landing pad}
+    For \verb|C++|, the \verb+landingpad+ instruction returns a pair of the pointer to
+    the exception structure and the selector value. If the selector is:
+    \begin{description}
+      \item[positive] it means that an exception, which type corresponds to
+        selector value (\verb+llvm.eh.typeid.for+ intrinsic), was caught,
+      \item[zero] cleanup action should be performed (\textbf{finally} clause)
+        and stack unwinding should be resumed by \verb+resume+ instruction,
+      \item[negative] unexpected exception has been received (\textbf{filter} clause).
+    \end{description}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{LLVM IR}
+  \begin{exampleblock}{Support for exception handling.}
+    \begin{lstlisting}[basicstyle=\tiny\ttfamily,numbers=none]
+      ; Invoke Test function. If executed normally go to %Continuation,
+      ; otherwise stack unwinding goes to %TestCleanup landing pad.
+      %retval = invoke i32 @Test(i32 15) to label %Contination
+                                         unwind label %TestCleanup
+
+      ; A landing pad which can catch an integer.
+      %res = landingpad { i8*, i32 } personality i32 (...)* @__gxx_personality_v0
+                                     catch i8** @_ZTIi
+      ; A landing pad that is a cleanup.
+      %res = landingpad { i8*, i32 } personality i32 (...)* @__gxx_personality_v0
+                                     cleanup
+      ; A landing pad that catches everything.
+      %res = landingpad { i8*, i32 } personality i32 (...)* @__gxx_personality_v0
+                                     catch null
+      ; A landing pad which can catch an integer and can only throw a double.
+      %res = landingpad { i8*, i32 } personality i32 (...)* @__gxx_personality_v0
+                                     catch i8** @_ZTIi
+                                     filter [1 x i8**] [@_ZTId]
+
+      ; Obtains a unique identifier of a type described with _ZTIi structure (an integer).
+      %sel = tail call i32 @llvm.eh.typeid.for(i8* bitcast (i8** @_ZTIi to i8*)) nounwind
+
+      ; Within exception handling code: continue stack unwinding with given value.
+      resume { i8*, i32 } %exn
+    \end{lstlisting}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{EH example: code in \texttt{C++}}
+  \begin{exampleblock}{Let's try to translate following \texttt{C++} code into
+      \texttt{LLVM IR}:}
+    \begin{lstlisting}
+      extern void bar();
+
+      void foo() throw (const char *) {
+        try {
+          bar();
+        } catch (int) {
+          ...
+        }
+      }
+    \end{lstlisting}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{EH example: translation to \texttt{LLVM IR}}
+  \begin{lstlisting}[language=C,basicstyle=\tiny\ttfamily]
+    @_ZTIPKc = external constant i8*
+    @_ZTIi = external constant i8*
+
+    define void @_Z3foov() uwtable ssp {
+    entry:
+      invoke void @_Z3barv() to label %try.cont unwind label %lpad
+
+    lpad:
+      %0 = landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*)
+                                   catch i8* bitcast (i8** @_ZTIi to i8*)
+                                   filter [1 x i8*] [i8* bitcast (i8** @_ZTIPKc to i8*)]
+      %1 = extractvalue { i8*, i32 } %0, 0
+      %2 = extractvalue { i8*, i32 } %0, 1
+      %3 = tail call i32 @llvm.eh.typeid.for(i8* bitcast (i8** @_ZTIi to i8*)) nounwind
+      %matches = icmp eq i32 %2, %3
+      br i1 %matches, label %catch, label %filter.dispatch
+
+    filter.dispatch:
+      %ehspec.fails = icmp slt i32 %2, 0
+      br i1 %ehspec.fails, label %ehspec.unexpected, label %eh.resume
+
+    ehspec.unexpected:
+      tail call void @__cxa_call_unexpected(i8* %1) no return
+      unreachable
+
+    catch:
+      %4 = tail call i8* @__cxa_begin_catch(i8* %1) nounwind
+      tail call void @__cxa_end_catch() nounwind
+      br label %try.cont
+
+    try.cont:
+      ret void
+
+    eh.resume:
+      resume { i8*, i32 } %0
+    }
+  \end{lstlisting}
+\end{frame}
+
+\end{document}

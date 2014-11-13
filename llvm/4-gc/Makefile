@@ -1,4 +1,4 @@
-FILE = intro
+FILE = gc
 
 all:	$(FILE).pdf
 

@@ -1,9 +1,9 @@
-FILE = llvm-ir
+FILE = overview
 
 all:	$(FILE).pdf
 
 %.pdf:	%.tex
-	latexmk -pdf $^
+	latexmk -shell-escape -pdf $^
 
 clean:
 	rm -f *~ *.nav *.snm *.vrb

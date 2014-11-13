@@ -1,4 +1,4 @@
-FILE = intro
+FILE = compilation
 
 all:	$(FILE).pdf
 

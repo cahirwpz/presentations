@@ -1,0 +1,143 @@
+\documentclass[8pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+
+\lstset{
+  basicstyle=\footnotesize\ttfamily,
+  numbers=left,
+  numbersep=-2em,
+  numberstyle=\color{gray}
+}
+
+\usetikzlibrary{shapes,arrows,automata}
+
+\tikzset{
+  vertex/.style={
+    rectangle,
+    rounded corners,
+    draw=black, thick,
+    text centered
+  },
+}
+
+\mode<beamer>
+{
+  \usetheme{Frankfurt}
+  \useoutertheme{miniframes}
+  \setbeamercovered{transparent}
+}
+
+\subject{Talks}
+
+\AtBeginSection[]
+{
+  \begin{frame}<beamer>{}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\title[LLVM]{LLVM: Low Level Virtual Machine\\An introduction to compiler infrastructure}
+\author[Krystian Bacławski]{\href{mailto:cahirwpz@cs.uni.wroc.pl}{Krystian Bacławski}}
+\institute{Computer Science Department\\University of Wrocław}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\section[Introduction]{What is LLVM?}
+\subsection*{Introduction}
+
+\begin{frame}[fragile]{Introduction}
+  \begin{block}{LLVM is a software framework for building compilers.}
+    \begin{itemize}
+      \item Well-defined intermediate code representation (aka LLVM IR -- \verb+.ll+ files).
+      \item Binary representation of LLVM IR (\verb+.bc+ files).
+      \item Code generators for many hardware architectures (\verb+x86+,
+        \verb+mips+, \verb+arm+, \verb+sparc+, \verb+ppc+).
+      \item Low-level optimizations (triggered during code generation phase).
+      \item Just-in-Time compilation and execution subsystem.
+      \item IR code transformations and optimizations (for use by an optimizing compiler).
+      \item Linkable and executable file handling (\verb+ELF+, \verb+MachO+, \verb+COFF+).
+      \item Tools like assembler, disassembler, optimizer and so on.
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{What LLVM is not?}
+    \begin{description}
+      \item[\sout{a compiler}] though one can use it to implement a mid-bottom part of a compiler.
+      \item[\sout{a library}] set of libraries, tools and a run-time environment.
+    \end{description}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Applications}
+  \begin{block}{Research platform:}
+    \begin{itemize}
+      \item Experiments with low-level and mid-level optimizations.
+      \item Code profiling and instrumentation.
+      \item ISA (instruction set architecture) design.
+      \item Compilers for domain specific languages.
+    \end{itemize}
+  \end{block}
+
+  \begin{exampleblock}{Notable LLVM uses:}
+    \begin{itemize}
+      \item Clang (C, C++, ObjC and ObjC++ front-end)
+      \item Compilers: Haskell, NVIDIA CUDA, Erlang HiPE,
+      \item Interpreters: PyPy, Mono, IcedTea, ClamAV,
+      \item GPGPU: OpenCL, Apple's OpenGL,
+      \item LLDB -- GNU Debugger competitor,
+      \item ASAN and TSAN -- code instrumentation for debugging purposes,
+      \item and so on\ldots (\href{http://llvm.org/Users.html}{LLVM Users})
+    \end{itemize}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Competition}
+  \begin{block}{LLVM together with Clang and LLDB tries to compete with GNU Toolchain}
+    \begin{itemize}
+      \item object and archive manipulation (\verb+ar+, \verb+ranlib+,
+        \verb+nm+, \verb+objdump+, \verb+readobj+)
+      \item profiler (\verb+prof+, \verb+cov+)
+      \item compiler, assembler and linker (\verb+clang+)
+      \item debugger (\verb+lldb+)
+    \end{itemize}
+  \end{block}
+
+  \begin{alertblock}{Especially Clang is worth a look!}
+    \begin{itemize}
+      \item It offers easy to understand diagnostic messages:
+        \begin{itemize}
+          \item especially for C++ templates and namespaces,
+          \item more meaningful warnings!
+        \end{itemize}
+      \item \ldots superior (memory and time) efficiency compared to GCC,
+      \item \ldots and a fast C / C++ parser library for:
+        \begin{itemize}
+          \item high-level optimizations,
+          \item static analysis,
+          \item program transformations.
+        \end{itemize}
+      \item Is an area of interesting (and practical) research:
+        \begin{itemize}
+          \item modules for C language,
+          \item thread-safety annotation checking.
+        \end{itemize}
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\end{document}

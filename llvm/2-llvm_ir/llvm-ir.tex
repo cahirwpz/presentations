@@ -1,0 +1,431 @@
+\PassOptionsToPackage{subsection=false}{beamerouterthememiniframes}
+\documentclass[8pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{fancyvrb}
+\usepackage{minted}
+
+\usepackage{mathptmx}
+\usepackage[scaled=0.9]{helvet}
+
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+
+\usetikzlibrary{shapes,arrows,automata}
+
+\tikzset{
+  vertex/.style={
+    rectangle,
+    rounded corners,
+    draw=black, thick,
+    text centered
+  },
+}
+
+\mode<beamer>
+{
+  \usetheme{Frankfurt}
+  \useoutertheme{miniframes}
+  \setbeamercovered{transparent}
+}
+
+\subject{Talks}
+
+\AtBeginSection[]
+{
+  \begin{frame}<beamer>{}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\title[LLVM]{LLVM: Low Level Virtual Machine\\LLVM Intermediate Representation}
+\author[Krystian Bacławski]{\href{mailto:cahirwpz@cs.uni.wroc.pl}{Krystian Bacławski}}
+\institute{Computer Science Department\\University of Wrocław}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\section[Language]{LLVM language}
+
+\subsection*{LLVM IR basics}
+
+\begin{frame}[fragile]{LLVM machine model}
+  \begin{block}{}
+    \begin{itemize}
+      \item Register based machine -- infinite number of virtual registers.
+      \item RISC-like load-store approach to memory access.
+      \item Implicit stack -- no stack management else than variable placement.
+      \item Normalized instruction stream in SSA form (implicit CFG).
+      \item Strongly typed:
+        \begin{itemize}
+          \item explicit coercions between numeric machine types,
+          \item typed pointers!
+        \end{itemize}
+      \item Heavily influenced by C language but versatile enough.
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Some features}
+    \begin{itemize}
+      \item Support for accurate garbage collection.
+      \item Support for Just-in-Time compilation.
+      \item Language agnostic exception handling (incl. DWARF2 stack unwinding).
+      \item Memory model for concurrent programming.
+      \item Branch profiling.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Type system}
+  \begin{block}{Types}
+    \begin{itemize}
+      \item C-like types: integer, floating point, void, array, function,
+        pointer,
+      \item label -- basic block entry,
+      \item structure -- fields are enumerated, but not named,
+      \item vector -- arbitrary length, for SIMD processors,
+      \item opaque -- forward declaration,
+      \item metadata -- code annotation.
+    \end{itemize}
+    \textbf{More information here: \href{http://llvm.org/docs/LangRef.html\#type-system}{Type System}}
+  \end{block}
+
+  \begin{alertblock}{}
+    Most types are first-class! It's not allowed to pass around a function type
+    -- but a pointer to function type is all right.
+  \end{alertblock}
+
+  \begin{block}{Type notation}
+    \begin{description}
+      \item[i1] boolean represented as a single-bit integer
+      \item[array] \verb+[ <#elements> x <element type> ]+
+      \item[vector] \verb+< <#elements> x <element type> >+
+      \item[structure] \verb+type { <type list> }+
+    \end{description}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Values}
+  \begin{block}{Special values}
+    \begin{description}
+      \item[null] invalid pointer
+      \item[boolean] \textbf{true} and \textbf{false}
+      \item[undef] unspecified bit-pattern value, may represent poison value
+      \item[zeroinitializer] for initialization of aggregate values
+      \item[BB's address] for \textbf{indirectbr} instruction
+    \end{description}
+    \textbf{More information here:
+      \href{http://llvm.org/docs/LangRef.html\#constants}{Constants}}
+  \end{block}
+
+  \begin{block}{Metadata}
+    Structure-like node that convey extra information about the code. There
+    are metadata nodes recognized by the optimisers and code generator.
+    \begin{minted}{llvm}
+      !0 = metadata !{ i32 0, metadata !"test" }
+      call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
+      %indvar.next = add i64 %indvar, 1, !dbg !21
+    \end{minted}
+    \textbf{More information here:
+      \href{http://llvm.org/docs/LangRef.html\#metadata-nodes-and-metadata-strings}{Metadata
+        nodes and metadata-strings}.}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Instructions}
+  \begin{block}{}
+    \begin{itemize}
+      \item Arithmetic instructions:
+        \begin{itemize}
+          \item integer: \verb+add+, \verb+sub+, \verb+mul+, \verb+udiv+,
+            \verb+sdiv+, \verb+urem+, \verb+srem+, \verb+icmp+
+          \item floating-point: \verb+fadd+, \verb+fsub+, \verb+fmul+, \verb+fdiv+,
+            \verb+frem+, \verb+fcmp+
+        \end{itemize}
+
+      \item Bitwise instructions:
+        \begin{itemize}
+          \item bit-shift: \verb+shl+, \verb+lshr+, \verb+ashr+
+          \item boolean: \verb+and+, \verb+or+, \verb+xor+
+        \end{itemize}
+
+      \item Control flow instructions:
+        \begin{itemize}
+          \item function calls: \verb+invoke+, \verb+call+, \verb+ret+
+          \item jumping: \verb+br+, \verb+switch+, \verb+indirectbr+
+          \item other: \verb+phi+, \verb+select+
+        \end{itemize}
+
+      \item Memory access instructions:
+        \begin{itemize}
+          \item stack space allocation: \verb+alloca+
+          \item generic accessors: \verb+load+, \verb+store+
+        \end{itemize}
+
+      \item Compound data access instructions:
+        \begin{itemize}
+          \item vectors: \verb+extractelement+, \verb+insertelement+, \verb+shufflevector+
+          \item aggregates: \verb+extractvalue+, \verb+insertvalue+
+          \item other: \verb+getelementptr+
+        \end{itemize}
+
+      \item Data conversion instructions:
+        \begin{itemize}
+          \item integer: \verb+trunc+, \verb+zext+ \verb+sext+
+          \item floating-point: \verb+fptrunc+, \verb+fpext+, \verb+fptoui+,
+            \verb+fptosi+, \verb+uitofp+, \verb+sitofp+,
+          \item pointers: \verb+ptrtoint+, \verb+inttoptr+, \verb+bitcast+
+        \end{itemize}
+    \end{itemize}
+    \textbf{More information here: \href{http://llvm.org/docs/LangRef.html\#instruction-reference}{Instruction reference}}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Non-control flow instruction examples}
+  \begin{exampleblock}{}
+    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
+      %r0 = add i32 4, %num                             ; r0 := 4 + %num
+      %r1 = fdiv float 11.0, %fp                        ; r1 := %fp / 11.0
+      %r2 = or i1 %b1, %b2                              ; r2 := %b1 || %b2
+      %r4 = extractelement <4 x i32> %vec, i32 0        ; r4 := %vec[0]
+      %r5 = insertvalue {i32, float} %agg, float %v, 1  ; r5 := %agg{[1] = %v}
+      %ptr = alloca i32                                 ; {i32 *}
+      store i32 3, i32* %ptr                            ; void : *(%ptr) = 3
+      %v = load i32* %ptr                               ; i32 : v := *(%ptr)
+      %p = icmp eq i32 %n, 0                            ; bool : p := (%n = 0)
+      %z = select i1 %p, i8 %x, i8 %y                   ; %z = %p ? %x : %y
+    \end{minted}
+  \end{exampleblock}
+
+  \begin{block}{Comments:}
+    \begin{itemize}
+      \item Integer: different signedness and word size possible, overflow
+        control.
+      \item Floating-point: different word size possible, compliance with
+        \verb+IEEE754+.
+      \item Boolean calculation for \verb+i1+ type.
+      \item \verb+alloca+ is the only instruction dealing with stack.
+      \item SSA is performed only for registers, not memory locations.
+      \item Choice of type essential for optimization.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Accessing aggregates}
+  \begin{exampleblock}{}
+    \begin{minted}[gobble=6,linenos,fontsize=\small]{c}
+      struct RT { /* Structure with complex types */
+        char A;
+        int B[10][20];
+        char C;
+      };
+
+      struct ST {
+        int X;
+        double Y;
+        struct RT Z; /* ST contains an instance of RT embedded in it */
+      };
+
+      int *foo(struct ST *s) {
+        return &s[1].Z.B[5][13];
+      }
+    \end{minted}
+  \end{exampleblock}
+  
+  \begin{exampleblock}{}
+    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
+      %struct.ST = type { i32, double, %struct.RT }
+      %struct.RT = type { i8, [10 x [20 x i32]], i8 }
+
+      define i32* @foo(%struct.ST* %s) {
+        %1 = getelementptr %struct.ST* %s, i64 1, i32 2, i32 1, i64 5, i64 13
+        ret i32* %1
+      }
+    \end{minted}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Control flow instruction examples}
+  \begin{exampleblock}{Infinite loop that counts from 0 on up\ldots}
+    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
+      LoopHeader:
+        ...
+        br label %Loop
+
+      Loop:
+        %IndVar = phi i32 [ 0, %LoopHeader ], [ %NextIndVar, %Loop ]
+        %NextIndVar = add i32 %IndVar, 1
+        br label %Loop
+    \end{minted}
+  \end{exampleblock}
+
+  \begin{block}{First basic control flow graph!}
+    \begin{itemize}
+      \item $\phi(\ldots)$ syntax: \verb+<result> = phi <type> [<val0>, <label0>], ...+
+      \item $\phi(\ldots)$ states:
+        \begin{itemize}
+          \item how control flow can reach given node?
+          \item which value to select depending on previous node?
+        \end{itemize}
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Call instruction examples}
+  \begin{exampleblock}{Function call examples:}
+    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
+      %retval = call i32 @test(i32 %argc)
+      call i32 (i8*, ...)* @printf(i8* %msg, i32 12, i8 42)
+      %X = tail call i32 @foo()
+      %struct.A = type { i32, i8 }
+      %r = call %struct.A @bar()
+      %Z = call void @foo() noreturn
+    \end{minted}
+  \end{exampleblock}
+
+  \begin{block}{Comments:}
+    \begin{itemize}
+      \item Different calling convention (\verb+fastcc+, \verb+ghc+, \ldots)
+      \item \verb+varargs+ functions supported.
+      \item Can return compound and aggregate types.
+      \item Special attribute for tail-call optimization.
+      \item \verb+invoke+ supports exceptions.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Compilation unit}
+  \begin{block}{Each compilation unit comprise of:}
+    \begin{itemize}
+      \item locally visible compound type declarations,
+      \item function definitions (with attributes / visibility specifiers),
+      \item global variables,
+      \item external function (pointer) type declarations,
+      \item architecture information and metadata (e.g. for debugging)
+    \end{itemize}
+  \end{block}
+
+  \begin{exampleblock}{All four composites of LLVM module:}
+    \begin{minted}[gobble=6,linenos,fontsize=\small]{llvm}
+      target datalayout = "..."
+
+      @.str = private unnamed_addr constant [13 x i8] c"hello world\0A\00"
+
+      declare i32 @puts(i8* nocapture) nounwind
+
+      define i32 @main() 
+        %hello = getelementptr [13 x i8]* @.str, i64 0, i64 0
+        call i32 @puts(i8* %hello)
+        ret i32 0
+      }
+
+      !1 = metadata !{i32 42}
+    \end{minted}
+  \end{exampleblock}
+\end{frame}
+
+\section[Examples]{LLVM IR Examples}
+\subsection*{LLVM IR examples}
+
+\begin{frame}[fragile]{Add two integers together}
+  \begin{exampleblock}{}
+    \begin{minted}[gobble=6,linenos,fontsize=\footnotesize]{c}
+      unsigned add1(unsigned a, unsigned b) {
+        return a+b;
+      }
+
+      unsigned add2(unsigned a, unsigned b) {
+        if (a == 0) return b;
+        return add2(a-1, b+1);
+      }
+    \end{minted}
+  \end{exampleblock}
+
+  \begin{exampleblock}{}
+    \begin{minted}[gobble=6,linenos,fontsize=\footnotesize]{llvm}
+      define i32 @add1(i32 %a, i32 %b) {
+        entry:
+          %tmp1 = add i32 %a, %b
+          ret i32 %tmp1
+      }
+
+      define i32 @add2(i32 %a, i32 %b) {
+        entry:
+          %tmp1 = icmp eq i32 %a, 0
+          br i1 %tmp1, label %done, label %recurse
+
+        recurse:
+          %tmp2 = sub i32 %a, 1
+          %tmp3 = add i32 %b, 1
+          %tmp4 = call i32 @add2(i32 %tmp2, i32 %tmp3)
+          ret i32 %tmp4
+
+        done:
+          ret i32 %b
+      }
+    \end{minted}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{How to use LLVM tools?}
+  \begin{block}{Generate some code from C source}
+    \begin{minted}[gobble=6,linenos]{bash}
+      clang -S -emit-llvm -o test.ll test.c
+      clang -S -O2 -emit-llvm -o test.ll test.c
+      llc -o test.s test.ll
+      llc -march=ppc32 -o test.s test.ll
+    \end{minted}
+  \end{block}
+
+  \begin{block}{View Control Flow Graph}
+    \begin{minted}[gobble=6,linenos]{bash}
+      opt -view-cfg -S test.ll
+      opt -mem2reg -view-cfg -S test.ll
+    \end{minted}
+  \end{block}
+\end{frame}
+
+\section*{The End}
+
+\begin{frame}[fragile]{LLVM links}
+  \begin{block}{Research links:}
+    \begin{enumerate}
+      \item \href{http://llvm.org/pubs/}{LLVM Related Publications}
+      \item \href{http://llvm.org/devmtg/}{LLVM Developers' Meeting}
+    \end{enumerate}
+  \end{block}
+
+  \begin{block}{Presentation and papers about LLVM and verification:}
+    \begin{enumerate}
+      \item \href{http://llvm.org/devmtg/2013-11/#talk5}
+         {Verifying optimizations using SMT solvers}
+      \item \href{http://www.cs.rutgers.edu/~santosh.nagarakatte/pldi2013.pdf}
+        {Formal Verification of SSA-Based Optimizations for LLVM}
+      \item \href{http://llvm.org/devmtg/2012-11/#talk5}
+        {Verified LLVM: Formalizing the semantics of the LLVM Intermediate
+          Representation for Verified Program Transformations}
+    \end{enumerate}
+  \end{block}
+\end{frame}
+
+\begin{frame}{}
+  \vspace*{\stretch{2}}
+  \begin{center}
+    {\Huge Questions?}
+  \end{center}
+  \vspace{\stretch{3}}
+\end{frame}
+
+\end{document}
